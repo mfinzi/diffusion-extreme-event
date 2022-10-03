@@ -20,9 +20,9 @@ import pickle
 import time
 
 from absl import logging
-from clu import checkpoint
-from clu import metric_writers
-from clu import periodic_actions
+# from clu import checkpoint
+# from clu import metric_writers
+# from clu import periodic_actions
 import jax
 from jax import jit
 from jax import random
@@ -51,9 +51,9 @@ def train_and_evaluate(config, workdir):
     trained score function s(xₜ,t)=∇logp(xₜ).
   """
 
-  writer = metric_writers.create_default_writer(
-      logdir=workdir, just_logging=jax.process_index() != 0)
-  report_progress = periodic_actions.ReportProgress(writer=writer)
+  # writer = metric_writers.create_default_writer(
+  #     logdir=workdir, just_logging=jax.process_index() != 0)
+  # report_progress = periodic_actions.ReportProgress(writer=writer)
 
   key = random.PRNGKey(config.seed)
   # Construct the dataset
@@ -78,13 +78,13 @@ def train_and_evaluate(config, workdir):
   cond_fn = lambda z: (z[:, :3] if config.ic_conditioning else None)
 
   # save the config and the data_std (used for normalization)
-  with tf.Open(os.path.join(workdir, "config.pickle"), "wb") as f:
+  with open(os.path.join(workdir, "config.pickle"), "wb") as f:
     pickle.dump(config, f)
-  with tf.io.gfile.Open(os.path.join(workdir, "data_std.pickle"), "wb") as f:
+  with open(os.path.join(workdir, "data_std.pickle"), "wb") as f:
     pickle.dump(data_std, f)
   # setup checkpoint saving
   checkpoint_dir = os.path.join(workdir, "checkpoints")
-  ckpt = checkpoint.MultihostCheckpoint(checkpoint_dir, {}, max_to_keep=2)
+  #ckpt = checkpoint.MultihostCheckpoint(checkpoint_dir, {}, max_to_keep=2)
 
   ## train the model
   score_fn = diffusion.train_diffusion(
@@ -94,9 +94,9 @@ def train_and_evaluate(config, workdir):
       config.epochs,
       diffusion=difftype,
       lr=config.lr,
-      writer=writer,
-      report=report_progress,
-      ckpt=ckpt,
+      writer=None,
+      report=None,
+      ckpt=None,
       cond_fn=cond_fn)
 
   ## evaluate the model
