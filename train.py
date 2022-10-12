@@ -36,7 +36,9 @@ import diffusion
 import ode_datasets
 import samplers
 import unet
-
+from oil.logging.lazyLogger import LazyLogger
+from oil.utils.utils import FixedNumpySeed
+import pandas as pd
 
 def train_and_evaluate(config, workdir):
   """Execute diffusion model training and evaluation loop.
@@ -54,11 +56,12 @@ def train_and_evaluate(config, workdir):
   # writer = metric_writers.create_default_writer(
   #     logdir=workdir, just_logging=jax.process_index() != 0)
   # report_progress = periodic_actions.ReportProgress(writer=writer)
-
+  #workdir = config.
   key = random.PRNGKey(config.seed)
   # Construct the dataset
   timesteps = config.dataset_timesteps
-  ds = getattr(ode_datasets, config.dataset)(N=config.ds + config.bs)
+  with FixedNumpySeed(config.seed):
+    ds = getattr(ode_datasets, config.dataset)(N=config.ds + config.bs)
   trajectories = ds.Zs[config.bs:, :timesteps]
   test_x = ds.Zs[:config.bs, :timesteps]
   data_std = trajectories.std()
@@ -77,33 +80,39 @@ def train_and_evaluate(config, workdir):
   # whether or not to condition on initial timesteps
   cond_fn = lambda z: (z[:, :3] if config.ic_conditioning else None)
 
+  logger = LazyLogger(config.get("log_dir",None),config.get("log_suffix",""))
   # save the config and the data_std (used for normalization)
-  with open(os.path.join(workdir, "config.pickle"), "wb") as f:
-    pickle.dump(config, f)
-  with open(os.path.join(workdir, "data_std.pickle"), "wb") as f:
-    pickle.dump(data_std, f)
+  logger.save_object(config, "config")
+  logger.save_object(data_std, "data_std")
+  # with open(os.path.join(workdir, "config.pickle"), "wb") as f:
+  #   pickle.dump(config, f)
+  # with open(os.path.join(workdir, "data_std.pickle"), "wb") as f:
+  #   pickle.dump(data_std, f)
   # setup checkpoint saving
   checkpoint_dir = os.path.join(workdir, "checkpoints")
   #ckpt = checkpoint.MultihostCheckpoint(checkpoint_dir, {}, max_to_keep=2)
 
   ## train the model
-  score_fn = diffusion.train_diffusion(
+  
+  params, score_fn = diffusion.train_diffusion(
       model,
       dataiter,
       data_std,
       config.epochs,
       diffusion=difftype,
       lr=config.lr,
-      writer=None,
+      writer=logger,
       report=None,
       ckpt=None,
       cond_fn=cond_fn)
-
+  logger.save_object(params, "params")
+  # with open(os.path.join(workdir, "params.pickle"), "wb") as f:
+  #   pickle.dump(params, f)
   ## evaluate the model
   kstart = 3  # timepoint at which to start measuring errors
 
   @jit
-  def log_prediction_metric(qs):
+  def log_prediction_metric(qs_pred, qs_gt):
     """Log geometric mean of rollout relative error computed over trajectory.
 
     Takes trajectory qs, uses qs[kstart] as initial condition and integrates
@@ -116,29 +125,30 @@ def train_and_evaluate(config, workdir):
       the log of the geomean of the rollout error
     """
     k = kstart
-    traj = qs[k:]
+    # traj = qs[k:]
     times = T_long[k:]
-    traj_gt = ds.integrate(traj[0], times)
-    return jnp.log(rel_err(traj, traj_gt)[1:len(times) // 2]).mean()
+    return jnp.log(rel_err(qs_pred[k:], qs_gt[k:])[1:len(times)]).mean()
 
   @jit
-  def pmetric(qs):
+  def pmetric(qs,qs_gt):
     """Geomean of rollout relative error, also taken over minibatch."""
-    log_metric = vmap(log_prediction_metric)(qs)
+    log_metric = vmap(log_prediction_metric)(qs,qs_gt)
     std_err = jnp.exp(log_metric.std() / jnp.sqrt(log_metric.shape[0]))
     return jnp.exp(log_metric.mean()), std_err  # also returns stderr
 
   eval_scorefn = partial(score_fn, cond=cond_fn(test_x))
   nll = samplers.compute_nll(difftype, eval_scorefn, key, test_x).mean()
-  stoch_samples = samplers.sde_sample(
-      difftype, eval_scorefn, key, test_x.shape, nsteps=1000, traj=False)
-  err = pmetric(stoch_samples)[0]
-
+  if config.ic_conditioning:
+    stoch_samples = samplers.sde_sample(
+        difftype, eval_scorefn, key, test_x.shape, nsteps=1000, traj=False)
+    err = pmetric(stoch_samples,test_x)[0]
+  else: 
+    err = jnp.ones(1)
   logging.info(f"{noise.__name__} gets NLL {nll:.3f} and err {err:.3f}")  # pylint: disable=logging-fstring-interpolation
   eval_metrics_cpu = jax.tree_map(np.array, {"NLL": nll, "err": err})
-  writer.write_scalars(config.epochs, eval_metrics_cpu)
-  report_progress(config.epochs, time.time())
-  return score_fn
+  #writer.write_scalars(config.epochs, eval_metrics_cpu)
+  #report_progress(config.epochs, time.time())
+  return pd.DataFrame(eval_metrics_cpu,index=[0])
 
 
 @jit

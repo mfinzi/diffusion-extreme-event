@@ -413,23 +413,21 @@ def train_diffusion(
       if writer is not None:
         metrics = {'loss': loss_val, 'ema_loss': ema_loss}
         eval_metrics_cpu = jax.tree_map(np.array, metrics)
-        writer.write_scalars(epoch, eval_metrics_cpu)
-        report(epoch, time.time())
+        writer.add_scalars('metrics', eval_metrics_cpu,epoch)
+        writer.report()
 
   model_state = ema_params
-  if ckpt is not None:
-    ckpt.save(model_state)
-
   @jit
-  def score_out(x,
+  def score_fn(x,
                 t,
                 cond = None):
     """Trained score function s(xₜ,t):=∇logp(xₜ)."""
     if not hasattr(t, 'shape') or not t.shape:
       t = jnp.ones(x.shape[0]) * t
-    return score(ema_params, x, t, train=False, cond=cond)
-
-  return score_out
+    return score(params, x, t, train=False, cond=cond)
+  return model_state, score_fn
+  # if ckpt is not None:
+  #   ckpt.save(model_state)
 
 
 def count_params(params):

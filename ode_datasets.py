@@ -299,7 +299,6 @@ class HamiltonianDataset(ODEDataset):
     anim = self.animator(xt)
     return anim.animate()
 
-
 class SHO(HamiltonianDataset):
   """A basic simple harmonic oscillator."""
 
@@ -323,6 +322,9 @@ class NPendulum(HamiltonianDataset):
   conjugate momenta p = M(q)dq/dt.
   Mass matrix M(q) and Hamiltonian derived in https://arxiv.org/abs/2010.13581,
   page 20.
+
+  After generating the trajectories, angles are embedded into R^2 using
+  sin and cos, momentum is discarded.
   """
 
   animator = PendulumAnimation
@@ -340,6 +342,10 @@ class NPendulum(HamiltonianDataset):
     """
     self.n = n
     super().__init__(*args, dt=dt, **kwargs)
+    # embed the angles with sin and cosine
+    sin = jnp.sin(self.Zs[..., :n])
+    cos = jnp.cos(self.Zs[..., :n])
+    self.Zs = jnp.concatenate([sin, cos], axis=-1)
 
   def mass(self, q):
     # assume all ls are 1 and ms are 1
