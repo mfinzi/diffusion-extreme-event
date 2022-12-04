@@ -300,8 +300,8 @@ def event_scores(diffusion,
     def log_p(xt):  # log p(E|xt)
       xh = xhat(xt, array_t)
       C, DC = vmap(jax.value_and_grad(constraint))(xh)  # pylint: disable=invalid-name
-      CoXhat = lambda x, t: constraint(xhat(x[None], t)[0])  # pylint: disable=invalid-name
-      SigmaDC = vmap(jax.grad(CoXhat))(xt, array_t)  # pylint: disable=invalid-name
+      CoXhat = lambda x, t: constraint(xhat(x, t)).sum(0)  # pylint: disable=invalid-name
+      SigmaDC = jax.grad(CoXhat)(xt, array_t)  # pylint: disable=invalid-name
       # NOTE: will not work with img inputs
       std = ((DC * SigmaDC).sum((-1, -2)) * diffusion.scale(t))
       std = jnp.sqrt(jnp.abs(std) + reg) * (
@@ -314,6 +314,37 @@ def event_scores(diffusion,
 
   return jit(conditioned_scores)
 
+def bad_event_scores(diffusion,
+                 scorefn,
+                 constraint,
+                 reg = 1.):
+  """Model scores ∇log p(xₜ|E) conditioned on inequality constraint E=[C(x)>0]."""
+
+  def xhat(xt, t):
+    tt = unsqueeze_like(xt, t)
+    score_xhat = (xt +
+                  diffusion.sigma(tt)**2 * scorefn(xt, t)) / diffusion.scale(tt)
+    return score_xhat
+
+  def conditioned_scores(xt, t):
+    b, _, c = xt.shape  # pylint: disable=invalid-name
+    unobserved_score = scorefn(xt, t).reshape(b, -1, c)
+    if not hasattr(t, 'shape') or not t.shape:
+      array_t = t * jnp.ones(b)
+    else:
+      array_t = t
+
+    def log_p(xt):  # log p(E|xt)
+      xh = xhat(xt, array_t)
+      C = vmap(constraint)(xh)  # pylint: disable=invalid-name
+      std = (diffusion.sigma(t) / diffusion.scale(t))
+      # use logit approximation of probit (guassian cdf)
+      return jax.nn.log_sigmoid(reg*1.6 * C).sum()
+
+    unobserved_score += grad(log_p)(xt)
+    return unobserved_score
+
+  return jit(conditioned_scores)
 
 def bad_event_scores(diffusion,
                  scorefn,

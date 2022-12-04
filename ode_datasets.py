@@ -343,6 +343,7 @@ class NPendulum(HamiltonianDataset):
     self.n = n
     super().__init__(*args, dt=dt, **kwargs)
     # embed the angles with sin and cosine
+    self._Zs = self.Zs
     sin = jnp.sin(self.Zs[..., :n])
     cos = jnp.cos(self.Zs[..., :n])
     self.Zs = jnp.concatenate([sin, cos], axis=-1)
