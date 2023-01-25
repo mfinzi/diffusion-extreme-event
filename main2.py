@@ -36,7 +36,7 @@ import pandas as pd
 def Trial(cfg,i=None):
     tf.config.experimental.set_visible_devices([], "GPU")
     with warnings.catch_warnings():
-        
+        tf.config.experimental.set_visible_devices([], "GPU")
         warnings.simplefilter("ignore")
         if i is not None:
             orig_suffix = cfg.get('log_suffix','')
@@ -49,7 +49,7 @@ def Trial(cfg,i=None):
 #   tf.config.experimental.set_visible_devices([], "GPU")
 #   with warnings.catch_warnings():
 #     cfg = get_config()
-#     cfg.update({'epochs':100,'dataset':"NPendulum",'channels':24,'ic_conditioning':True})
+#     cfg.update({'epochs':100,'dataset':"LorenzDataset",'channels':24,'ic_conditioning':True})
 #     print(Trial(cfg)[1])
 
 
