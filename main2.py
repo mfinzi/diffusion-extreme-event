@@ -34,7 +34,9 @@ import os
 import pandas as pd
 
 def Trial(cfg,i=None):
+    tf.config.experimental.set_visible_devices([], "GPU")
     with warnings.catch_warnings():
+        
         warnings.simplefilter("ignore")
         if i is not None:
             orig_suffix = cfg.get('log_suffix','')
@@ -53,13 +55,12 @@ def Trial(cfg,i=None):
 
 
 if __name__=='__main__':
-  tf.config.experimental.set_visible_devices([], "GPU")
   with warnings.catch_warnings():
       warnings.simplefilter("ignore", category=UserWarning)
       cfg_spec = copy.deepcopy(dict(**get_config()))
       cfg_spec.update({
-          'study_name':'all_datasets3','dataset':['LorenzDataset','FitzHughDataset','NPendulum'],
-          'ic_conditioning':[False,True], 'epochs':50000, 'channels':24, 'ds':10000,
+          'study_name':'lorenz_long','dataset':['LorenzDataset','FitzHughDataset','NPendulum'],
+          'ic_conditioning':[False,True], 'epochs':100000, 'channels':24,# 'ds':10000,
       })
       
       cfg_spec = argupdated_config(cfg_spec)

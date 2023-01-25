@@ -234,6 +234,19 @@ def sde_sample(diffusion,
                                          key1)
   return xt if traj else samples
 
+def sde_sample_completions(
+               diffusion,
+               scorefn,
+               key,
+               x_start,
+               start_step,
+               nsteps = 500):
+  timesteps = (.5 + np.arange(nsteps)[::-1])[start_step:] / nsteps
+  key0, key1 = random.split(key)
+  xf = x_start
+  samples, xt = euler_maruyama_integrate(diffusion, scorefn, xf, timesteps,
+                                         key1)
+  return samples
 
 def inpainting_scores(diff,
                       scorefn,
@@ -313,6 +326,32 @@ def event_scores(diffusion,
     return unobserved_score
 
   return jit(conditioned_scores)
+
+def event_mu_sigma(diffusion,scorefn,constraint,reg=1e-3):
+  def xhat(xt, t):
+    tt = unsqueeze_like(xt, t)
+    score_xhat = (xt +
+                  diffusion.sigma(tt)**2 * scorefn(xt, t)) / diffusion.scale(tt)
+    return score_xhat
+
+  def mu_sigma(xt, t):
+    b, _, c = xt.shape  # pylint: disable=invalid-name
+    if not hasattr(t, 'shape') or not t.shape:
+      array_t = t * jnp.ones(b)
+    else:
+      array_t = t
+
+    xh = xhat(xt, array_t)
+    C, DC = vmap(jax.value_and_grad(constraint))(xh)  # pylint: disable=invalid-name
+    CoXhat = lambda x, t: constraint(xhat(x, t)).sum(0)  # pylint: disable=invalid-name
+    SigmaDC = jax.grad(CoXhat)(xt, array_t)  # pylint: disable=invalid-name
+    # NOTE: will not work with img inputs
+    std = ((DC * SigmaDC).sum((-1, -2)) * diffusion.scale(t))
+    std = jnp.sqrt(jnp.abs(std) + reg) * (
+        diffusion.sigma(t) / diffusion.scale(t))
+    return C, std
+
+  return mu_sigma
 
 def bad_event_scores(diffusion,
                  scorefn,
